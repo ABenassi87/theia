@@ -43,6 +43,12 @@ export function toViewColumn(ep?: EditorPosition): theia.ViewColumn | undefined 
         return <number>types.ViewColumn.Five;
     } else if (ep === EditorPosition.SIX) {
         return <number>types.ViewColumn.Six;
+    } else if (ep === EditorPosition.SEVEN) {
+        return <number>types.ViewColumn.Seven;
+    } else if (ep === EditorPosition.EIGHT) {
+        return <number>types.ViewColumn.Eight;
+    } else if (ep === EditorPosition.NINE) {
+        return <number>types.ViewColumn.Nine;
     }
 
     return undefined;

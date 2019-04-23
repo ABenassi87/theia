@@ -19,7 +19,6 @@ import { Emitter, Event } from '@theia/core';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { TheiaDockPanel } from '@theia/core/lib/browser/shell/theia-dock-panel';
 import { toArray } from '@phosphor/algorithm';
-import { Widget } from '@phosphor/widgets';
 
 @injectable()
 export class ViewColumnService {
@@ -57,17 +56,13 @@ export class ViewColumnService {
 
     updateViewColumns(): void {
         const positionIds = new Map<number, string[]>();
-        toArray(this.mainPanel.widgets()).forEach((widget: Widget) => {
-            const dockPanel = <{ id?: string, style?: CSSStyleDeclaration }>widget.node;
-            if (dockPanel.id && dockPanel.style && dockPanel.style.left) {
-                const position = parseInt(dockPanel.style.left);
-                if (!isNaN(position)) {
-                    if (!positionIds.has(position)) {
-                        positionIds.set(position, []);
-                    }
-                    positionIds.get(position)!.push(dockPanel.id);
-                }
+        toArray(this.mainPanel.tabBars()).forEach(tabBar => {
+            if (!tabBar.node.style.left) {
+                return;
             }
+            const position = parseInt(tabBar.node.style.left);
+            const viewColumnIds = tabBar.titles.map(title => title.owner.id);
+            positionIds.set(position, viewColumnIds);
         });
         this.columnValues.clear();
         this.viewColumnIds.clear();
@@ -92,5 +87,9 @@ export class ViewColumnService {
 
     hasViewColumn(id: string): boolean {
         return this.columnValues.has(id);
+    }
+
+    viewColumnsSize(): number {
+        return this.viewColumnIds.size;
     }
 }

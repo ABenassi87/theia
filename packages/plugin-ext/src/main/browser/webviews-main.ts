@@ -27,6 +27,9 @@ import { ThemeRulesService } from './webview/theme-rules-service';
 import { DisposableCollection } from '@theia/core';
 import { ViewColumnService } from './view-column-service';
 
+import debounce = require('lodash.debounce');
+import { Cancelable } from 'lodash';
+
 export class WebviewsMainImpl implements WebviewsMain {
     private readonly revivers = new Set<string>();
     private readonly proxy: WebviewsExt;
@@ -35,34 +38,24 @@ export class WebviewsMainImpl implements WebviewsMain {
     protected readonly keybindingRegistry: KeybindingRegistry;
     protected readonly themeService = ThemeService.get();
     protected readonly themeRulesService = ThemeRulesService.get();
+    protected readonly handler: (() => void) & Cancelable;
 
     private readonly views = new Map<string, WebviewWidget>();
     private readonly viewsOptions = new Map<string, { panelOptions: WebviewPanelShowOptions; panelId: string; active: boolean; visible: boolean; }>();
-
-    private timeoutHandle: NodeJS.Timer | undefined;
 
     constructor(rpc: RPCProtocol, container: interfaces.Container) {
         this.proxy = rpc.getProxy(MAIN_RPC_CONTEXT.WEBVIEWS_EXT);
         this.shell = container.get(ApplicationShell);
         this.keybindingRegistry = container.get(KeybindingRegistry);
         this.viewColumnService = container.get(ViewColumnService);
-
-        const checkViewsOptions = () => {
-            if (!this.views.size) {
-                return;
+        this.handler = debounce<() => void>(() => {
+            for (const key of this.viewsOptions.keys()) {
+                this.checkViewOptions(key);
             }
-            if (this.timeoutHandle) {
-                clearTimeout(this.timeoutHandle);
-            }
-            this.timeoutHandle = setTimeout(() => {
-                for (const key of this.viewsOptions.keys()) {
-                    this.checkViewOptions(key);
-                }
-            }, 50);
-        };
-        this.shell.activeChanged.connect(() => checkViewsOptions());
-        this.shell.currentChanged.connect(() => checkViewsOptions());
-        this.viewColumnService.onViewColumnChanged(() => checkViewsOptions());
+        }, 100);
+        this.shell.activeChanged.connect(() => this.handler());
+        this.shell.currentChanged.connect(() => this.handler());
+        this.viewColumnService.onViewColumnChanged(() => this.handler());
     }
 
     $createWebviewPanel(
@@ -131,10 +124,14 @@ export class WebviewsMainImpl implements WebviewsMain {
             let widgetIds = this.viewColumnService.getViewColumnIds(showOptions.viewColumn);
             if (widgetIds.length > 0) {
                 mode = 'tab-after';
-            } else if (showOptions.viewColumn > 0) {
-                widgetIds = this.viewColumnService.getViewColumnIds(showOptions.viewColumn - 1);
+            } else if (showOptions.viewColumn >= 0) {
+                const columnsSize = this.viewColumnService.viewColumnsSize();
+                if (columnsSize) {
+                    showOptions.viewColumn = columnsSize - 1;
+                    widgetIds = this.viewColumnService.getViewColumnIds(showOptions.viewColumn);
+                }
             }
-            const ref = this.shell.getWidgets(widgetOptions.area).find(widget => widget.isVisible && widgetIds.indexOf(widget.node.id) !== -1);
+            const ref = this.shell.getWidgets(widgetOptions.area).find(widget => widget.isVisible && widgetIds.indexOf(widget.id) !== -1);
             if (ref) {
                 Object.assign(widgetOptions, { ref, mode });
             }
@@ -168,7 +165,7 @@ export class WebviewsMainImpl implements WebviewsMain {
         if (view.isDisposed) {
             return;
         }
-        if (showOptions.viewColumn !== undefined || (showOptions.area !== undefined && showOptions.area !== 'main')) {
+        if (showOptions.viewColumn !== undefined || showOptions.area !== undefined) {
             this.viewColumnService.updateViewColumns();
             const options = this.viewsOptions.get(view.id);
             if (!options) {
@@ -177,9 +174,7 @@ export class WebviewsMainImpl implements WebviewsMain {
             const columnIds = showOptions.viewColumn ? this.viewColumnService.getViewColumnIds(showOptions.viewColumn) : [];
             if (columnIds.indexOf(view.id) === -1 || options.panelOptions.area !== showOptions.area) {
                 this.addOrReattachWidget(options.panelId, showOptions);
-                if (this.timeoutHandle) {
-                    clearTimeout(this.timeoutHandle);
-                }
+                this.handler.cancel();
                 this.checkViewOptions(view.id, showOptions.viewColumn);
                 return;
             }
@@ -236,9 +231,9 @@ export class WebviewsMainImpl implements WebviewsMain {
         if (viewColumn === undefined) {
             this.viewColumnService.updateViewColumns();
             viewColumn = this.viewColumnService.hasViewColumn(view.id) ? this.viewColumnService.getViewColumn(view.id)! : 0;
-        }
-        if (viewColumn === undefined && options.panelOptions.viewColumn === viewColumn && options.visible === visible && options.active === active) {
-            return;
+            if (options.panelOptions.viewColumn === viewColumn && options.visible === visible && options.active === active) {
+                return;
+            }
         }
         options.active = active;
         options.visible = visible;

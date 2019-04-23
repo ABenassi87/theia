@@ -477,7 +477,10 @@ export enum EditorPosition {
     THREE = 2,
     FOUR = 3,
     FIVE = 4,
-    SIX = 5
+    SIX = 5,
+    SEVEN = 6,
+    EIGHT = 7,
+    NINE = 8
 }
 
 export interface Position {
